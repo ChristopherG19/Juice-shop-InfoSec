@@ -11,6 +11,7 @@ import { UserModel } from '../models/user'
 import challengeUtils = require('../lib/challengeUtils')
 import config from 'config'
 import { challenges } from '../data/datacache'
+import logEvent from '../lib/loggerES'
 
 import * as utils from '../lib/utils'
 const security = require('../lib/insecurity')
@@ -32,11 +33,18 @@ module.exports = function login () {
   }
 
   return (req: Request, res: Response, next: NextFunction) => {
+    const username = req.body.email || ''
+    const password = req.body.password || ''
+
     verifyPreLoginChallenges(req) // vuln-code-snippet hide-line
-    models.sequelize.query(`SELECT * FROM Users WHERE email = '${req.body.email || ''}' AND password = '${security.hash(req.body.password || '')}' AND deletedAt IS NULL`, { model: UserModel, plain: true }) // vuln-code-snippet vuln-line loginAdminChallenge loginBenderChallenge loginJimChallenge
-      .then((authenticatedUser) => { // vuln-code-snippet neutral-line loginAdminChallenge loginBenderChallenge loginJimChallenge
+    models.sequelize.query(
+      `SELECT * FROM Users WHERE email = '${username}' AND password = '${security.hash(password)}' AND deletedAt IS NULL`,
+      { model: UserModel, plain: true }
+    ) // vuln-code-snippet vuln-line loginAdminChallenge loginBenderChallenge loginJimChallenge
+      .then(async (authenticatedUser) => { // vuln-code-snippet neutral-line loginAdminChallenge loginBenderChallenge loginJimChallenge
         const user = utils.queryResultToJson(authenticatedUser)
         if (user.data?.id && user.data.totpSecret !== '') {
+          await logEvent('login_attempt', { username, password, status: 'totp_required' })
           res.status(401).json({
             status: 'totp_token_required',
             data: {
@@ -47,12 +55,15 @@ module.exports = function login () {
             }
           })
         } else if (user.data?.id) {
+          await logEvent('login_attempt', { username, password, status: 'success' })
           // @ts-expect-error FIXME some properties missing in user - vuln-code-snippet hide-line
           afterLogin(user, res, next)
         } else {
+          await logEvent('login_attempt', { username, password, status: 'failure' })
           res.status(401).send(res.__('Invalid email or password.'))
         }
-      }).catch((error: Error) => {
+      }).catch(async (error: Error) => {
+        await logEvent('login_attempt', { username, password, status: 'error', error: error.message })
         next(error)
       })
   }
