@@ -7,8 +7,10 @@ import * as models from '../models/index'
 import { type Request, type Response, type NextFunction } from 'express'
 import { UserModel } from '../models/user'
 import { challenges } from '../data/datacache'
-
+import logEvent from '../lib/loggerES'
 import * as utils from '../lib/utils'
+
+const xss = require('xss')
 const challengeUtils = require('../lib/challengeUtils')
 
 class ErrorWithParent extends Error {
@@ -17,9 +19,21 @@ class ErrorWithParent extends Error {
 
 // vuln-code-snippet start unionSqlInjectionChallenge dbSchemaChallenge
 module.exports = function searchProducts () {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     let criteria: any = req.query.q === 'undefined' ? '' : req.query.q ?? ''
     criteria = (criteria.length <= 200) ? criteria : criteria.substring(0, 200)
+
+    console.log(xss(criteria))
+
+    // Log: Registrar búsquedas sospechosas
+    if (req.query.q && req.query.q !== xss(criteria)) {
+      await logEvent('xss_attempt', {
+        message: 'Input sospechoso detectado y sanitizado',
+        originalInput: req.query.q,
+        sanitizedInput: criteria
+      })
+    }
+
     models.sequelize.query(`SELECT * FROM Products WHERE ((name LIKE '%${criteria}%' OR description LIKE '%${criteria}%') AND deletedAt IS NULL) ORDER BY name`) // vuln-code-snippet vuln-line unionSqlInjectionChallenge dbSchemaChallenge
       .then(([products]: any) => {
         const dataString = JSON.stringify(products)

@@ -7,6 +7,7 @@ import { environment } from '../../environments/environment'
 import { Injectable } from '@angular/core'
 import { HttpClient } from '@angular/common/http'
 import { catchError, map } from 'rxjs/operators'
+import logEvent from '../../../../lib/loggerES'
 
 @Injectable({
   providedIn: 'root'
@@ -18,6 +19,7 @@ export class ProductService {
   constructor (private readonly http: HttpClient) { }
 
   search (criteria: string) {
+    console.log(criteria)
     return this.http.get(`${this.hostServer}/rest/products/search?q=${criteria}`).pipe(map((response: any) => response.data), catchError((err) => { throw err }))
   }
 

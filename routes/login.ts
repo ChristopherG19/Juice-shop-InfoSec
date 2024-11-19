@@ -32,9 +32,43 @@ module.exports = function login () {
       })
   }
 
-  return (req: Request, res: Response, next: NextFunction) => {
+  function containsKeywords (input: any, keywords: any) {
+    // Convertimos el input en una cadena de texto segura para evitar errores con caracteres especiales
+    const safeInput = input.toString().toLowerCase()
+
+    // Verificar si el input contiene alguna de las palabras clave sospechosas
+    return keywords.some((keyword: any) => safeInput.match(new RegExp(keyword, 'i')))
+  }
+
+  return async (req: Request, res: Response, next: NextFunction) => {
     const username = req.body.email || ''
     const password = req.body.password || ''
+    const sqlInjectionKeywords = [
+      '--', ';', 'xp_', 'or 1=1', 'select *', 'union select', '--', 'drop table', 'insert into',
+      'update', 'select', 'delete', 'exec', 'char', 'concat'
+    ]
+    const xssKeywords = [
+      '<', '>', 'javascript:', 'alert(', 'onerror=', 'iframe', 'script', 'eval(', 'document.cookie'
+    ]
+    // Verificar SQL Injection
+    if (containsKeywords(username, sqlInjectionKeywords) || containsKeywords(password, sqlInjectionKeywords)) {
+      await logEvent('sql_injection_attempt', {
+        message: 'Intento de SQL Injection detectado',
+        input: { username, password },
+        status: 'vuln'
+      })
+      return res.status(400).json({ error: 'Invalid input detected (SQL Injection)' })
+    }
+
+    // Verificar XSS
+    if (containsKeywords(username, xssKeywords) || containsKeywords(password, xssKeywords)) {
+      await logEvent('xss_attempt', {
+        message: 'Intento de XSS detectado',
+        input: { username, password },
+        status: 'vuln'
+      })
+      return res.status(400).json({ error: 'Invalid input detected (XSS)' })
+    }
 
     verifyPreLoginChallenges(req) // vuln-code-snippet hide-line
     models.sequelize.query(
